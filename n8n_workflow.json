@@ -1,0 +1,121 @@
+{
+    "name": "AI Property Assistant Workflow",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "property-assistant",
+                "options": {}
+            },
+            "name": "Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                100,
+                300
+            ],
+            "id": "webhook-id"
+        },
+        {
+            "parameters": {
+                "model": "gpt-4o",
+                "prompt": "Update the conversation state based on user input: {{ $json.body.query }}. Current State: {{ getWorkflowStaticData('property_session').state }}. Extract property_type, city, min_price, max_price, bedrooms.",
+                "options": {}
+            },
+            "name": "AI Extract Entities",
+            "type": "n8n-nodes-base.openAi",
+            "typeVersion": 1,
+            "position": [
+                300,
+                300
+            ],
+            "id": "ai-id"
+        },
+        {
+            "parameters": {
+                "jsCode": "const staticData = getWorkflowStaticData('property_session');\nconst updates = $node[\"AI Extract Entities\"].json.data;\n\n// Update state logic\nstaticData.state = { ...(staticData.state || {}), ...updates };\n\nreturn { state: staticData.state, needsSearch: !!(staticData.state.property_type && staticData.state.city) };"
+            },
+            "name": "Update Static Data",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 1,
+            "position": [
+                500,
+                300
+            ],
+            "id": "code-id"
+        },
+        {
+            "parameters": {
+                "operation": "executeQuery",
+                "query": "SELECT * FROM properties WHERE property_type = {{ $json.state.property_type }} AND city = {{ $json.state.city }} LIMIT 3"
+            },
+            "name": "Supabase Search",
+            "type": "n8n-nodes-base.supabase",
+            "typeVersion": 1,
+            "position": [
+                700,
+                300
+            ],
+            "id": "supabase-id"
+        },
+        {
+            "parameters": {
+                "options": {}
+            },
+            "name": "Final Response",
+            "type": "n8n-nodes-base.webhookResponse",
+            "typeVersion": 1,
+            "position": [
+                900,
+                300
+            ],
+            "id": "response-id"
+        }
+    ],
+    "connections": {
+        "Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "AI Extract Entities",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "AI Extract Entities": {
+            "main": [
+                [
+                    {
+                        "node": "Update Static Data",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Update Static Data": {
+            "main": [
+                [
+                    {
+                        "node": "Supabase Search",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Supabase Search": {
+            "main": [
+                [
+                    {
+                        "node": "Final Response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    }
+}
