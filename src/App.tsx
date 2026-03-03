@@ -47,6 +47,10 @@ function App() {
   const [input, setInput] = useState('')
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [userEmail, setUserEmail] = useState('')
+  const [userPassword, setUserPassword] = useState('')
+  const [isLoginMode, setIsLoginMode] = useState(true)
+  const [authError, setAuthError] = useState('')
+  const [authMessage, setAuthMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [statusText, setStatusText] = useState('System Online')
   const [messages, setMessages] = useState<Message[]>([
@@ -66,9 +70,51 @@ function App() {
     else setStatusText('System Online')
   }, [isLoading])
 
-  const handleLogin = (e: React.FormEvent) => {
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        setIsLoggedIn(true)
+        setUserEmail(session.user.email || '')
+      }
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsLoggedIn(!!session)
+      if (session?.user?.email) {
+        setUserEmail(session.user.email)
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (userEmail) setIsLoggedIn(true)
+    setAuthError('')
+    setAuthMessage('')
+    setIsLoading(true)
+    
+    try {
+      if (isLoginMode) {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: userEmail,
+          password: userPassword,
+        })
+        if (error) throw error
+      } else {
+        const { error } = await supabase.auth.signUp({
+          email: userEmail,
+          password: userPassword,
+        })
+        if (error) throw error
+        setAuthMessage('Sign up successful! You can now log in.')
+        setIsLoginMode(true)
+      }
+    } catch (err: any) {
+      setAuthError(err.message || 'Authentication failed')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const scrollToBottom = () => {
@@ -88,7 +134,6 @@ function App() {
     setIsLoading(true)
 
     try {
-      // 1. Get AI brain response (Real OpenAI API)
       const aiResponse = await processAIQuery(input, staticData);
 
       const newStaticData = aiResponse.updatedState;
@@ -98,7 +143,6 @@ function App() {
       let results: Property[] = [];
       let msgType: 'text' | 'property' | 'weather' = 'text';
 
-      // 2. Routing Decisions (Tool Calling from AI)
       if (aiResponse.nextTool === 'WEATHER') {
         msgType = 'weather';
         botResponse = `${aiResponse.message} (fetching live conditions...)`;
@@ -173,10 +217,15 @@ function App() {
         <div className="bot-avatar" style={{ margin: '0 auto 1.5rem', width: '60px', height: '60px' }}>
           <Lock size={28} color="white" />
         </div>
-        <h1 style={{ fontSize: '1.5rem', marginBottom: '0.5rem', fontWeight: 700 }}>AI Assistant Login</h1>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '2rem' }}>Property & Weather Intelligence Portal</p>
+        <h1 style={{ fontSize: '1.5rem', marginBottom: '0.5rem', fontWeight: 700 }}>
+          {isLoginMode ? 'AI Assistant Login' : 'Create Account'}
+        </h1>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>Property & Weather Intelligence Portal</p>
 
-        <form onSubmit={handleLogin} style={{ display: 'grid', gap: '1rem' }}>
+        {authError && <div style={{ color: '#ef4444', marginBottom: '1rem', fontSize: '0.85rem', background: 'rgba(239, 68, 68, 0.1)', padding: '0.5rem', borderRadius: '8px' }}>{authError}</div>}
+        {authMessage && <div style={{ color: '#22c55e', marginBottom: '1rem', fontSize: '0.85rem', background: 'rgba(34, 197, 94, 0.1)', padding: '0.5rem', borderRadius: '8px' }}>{authMessage}</div>}
+
+        <form onSubmit={handleAuth} style={{ display: 'grid', gap: '1rem' }}>
           <input
             type="email"
             className="chat-input"
@@ -185,11 +234,29 @@ function App() {
             value={userEmail}
             onChange={(e) => setUserEmail(e.target.value)}
           />
-          <input type="password" className="chat-input" placeholder="Access Token" required />
-          <button className="send-btn" style={{ width: '100%', height: '48px', marginTop: '1rem', borderRadius: '12px', fontWeight: 600 }}>
-            Authorize Session
+          <input 
+            type="password" 
+            className="chat-input" 
+            placeholder="Password" 
+            required 
+            value={userPassword}
+            onChange={(e) => setUserPassword(e.target.value)}
+          />
+          <button disabled={isLoading} className="send-btn" style={{ width: '100%', height: '48px', marginTop: '1rem', borderRadius: '12px', fontWeight: 600, opacity: isLoading ? 0.7 : 1 }}>
+            {isLoading ? 'Processing...' : isLoginMode ? 'Authorize Session' : 'Sign Up'}
           </button>
         </form>
+        
+        <div style={{ marginTop: '1.5rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+          {isLoginMode ? "Don't have an account? " : "Already have an account? "}
+          <button 
+            type="button" 
+            onClick={() => { setIsLoginMode(!isLoginMode); setAuthError(''); setAuthMessage(''); }} 
+            style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontWeight: 600, padding: 0 }}
+          >
+            {isLoginMode ? 'Sign up' : 'Log in'}
+          </button>
+        </div>
       </div>
     )
   }
@@ -215,7 +282,7 @@ function App() {
               <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Authorized Agent</div>
             </div>
             <button
-              onClick={() => setIsLoggedIn(false)}
+              onClick={() => supabase.auth.signOut()}
               style={{
                 background: 'var(--glass-bg)',
                 border: '1px solid var(--glass-border)',
