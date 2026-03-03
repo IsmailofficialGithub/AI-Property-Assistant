@@ -27,15 +27,19 @@ export const processAIQuery = async (query: string, currentState: any) => {
                 const parsed = JSON.parse(text);
 
                 // Ensure we return the expected structure even if the webhook returns something different
+                const isArray = Array.isArray(parsed);
+
                 return {
-                    message: parsed.message || parsed.response || (typeof parsed === 'string' ? parsed : JSON.stringify(parsed)),
-                    updatedState: parsed.updatedState || currentState,
-                    nextTool: parsed.nextTool || "NONE"
+                    message: parsed.message || parsed.response || (isArray ? "I found several properties that match your search:" : (typeof parsed === 'string' ? parsed : JSON.stringify(parsed))),
+                    updatedState: parsed.updatedState || (isArray ? currentState : currentState),
+                    nextTool: parsed.nextTool || (isArray ? "NONE" : "NONE"),
+                    data: isArray ? parsed : (parsed.data || null)
                 };
             } catch (e) {
                 console.error("Failed to parse webhook JSON response, returning raw text as message", e);
                 return {
                     message: text,
+                    data: null,
                     updatedState: currentState,
                     nextTool: "NONE"
                 };
@@ -44,6 +48,7 @@ export const processAIQuery = async (query: string, currentState: any) => {
 
         return {
             message: "No response from webhook",
+            data: null,
             updatedState: currentState,
             nextTool: "NONE"
         };

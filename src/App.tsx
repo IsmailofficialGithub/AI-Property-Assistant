@@ -93,7 +93,7 @@ function App() {
     setAuthError('')
     setAuthMessage('')
     setIsLoading(true)
-    
+
     try {
       if (isLoginMode) {
         const { error } = await supabase.auth.signInWithPassword({
@@ -140,13 +140,27 @@ function App() {
       setStaticData(newStaticData);
 
       let botResponse = aiResponse.message;
-      let results: Property[] = [];
-      let msgType: 'text' | 'property' | 'weather' = 'text';
+      let results: Property[] = (aiResponse as any).data || [];
+      let msgType: 'text' | 'property' | 'weather' = results.length > 0 ? 'property' : 'text';
+
+      // Fallback: Check if botResponse itself is a JSON array of properties
+      if (results.length === 0 && typeof botResponse === 'string' && botResponse.trim().startsWith('[')) {
+        try {
+          const parsed = JSON.parse(botResponse);
+          if (Array.isArray(parsed) && parsed.length > 0 && (parsed[0].property_type || parsed[0].price)) {
+            results = parsed as Property[];
+            msgType = 'property';
+            botResponse = `I found ${results.length} properties matching your request:`;
+          }
+        } catch (e) {
+          // Not a valid property JSON, keep as is
+        }
+      }
 
       if (aiResponse.nextTool === 'WEATHER') {
         msgType = 'weather';
         botResponse = `${aiResponse.message} (fetching live conditions...)`;
-      } else if (aiResponse.nextTool === 'DATABASE' && newStaticData.city && newStaticData.property_type) {
+      } else if (aiResponse.nextTool === 'DATABASE' && results.length === 0 && newStaticData.city && newStaticData.property_type) {
         setStatusText('Querying Supabase...');
 
         // Cache Check
@@ -234,11 +248,11 @@ function App() {
             value={userEmail}
             onChange={(e) => setUserEmail(e.target.value)}
           />
-          <input 
-            type="password" 
-            className="chat-input" 
-            placeholder="Password" 
-            required 
+          <input
+            type="password"
+            className="chat-input"
+            placeholder="Password"
+            required
             value={userPassword}
             onChange={(e) => setUserPassword(e.target.value)}
           />
@@ -246,12 +260,12 @@ function App() {
             {isLoading ? 'Processing...' : isLoginMode ? 'Authorize Session' : 'Sign Up'}
           </button>
         </form>
-        
+
         <div style={{ marginTop: '1.5rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
           {isLoginMode ? "Don't have an account? " : "Already have an account? "}
-          <button 
-            type="button" 
-            onClick={() => { setIsLoginMode(!isLoginMode); setAuthError(''); setAuthMessage(''); }} 
+          <button
+            type="button"
+            onClick={() => { setIsLoginMode(!isLoginMode); setAuthError(''); setAuthMessage(''); }}
             style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontWeight: 600, padding: 0 }}
           >
             {isLoginMode ? 'Sign up' : 'Log in'}
@@ -324,7 +338,9 @@ function App() {
                         <div className="property-info">
                           <h4>{prop.property_type} in {prop.city}</h4>
                           <p>{prop.bedrooms} Bedrooms • {prop.amenities ? prop.amenities.join(', ') : ''}</p>
-                          <div className="price-tag">${prop.price}</div>
+                          <div className="price-tag">
+                            {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(Number(prop.price))}
+                          </div>
                         </div>
                       </div>
                     ))}
