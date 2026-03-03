@@ -29,11 +29,35 @@ export const processAIQuery = async (query: string, currentState: any) => {
                 // Ensure we return the expected structure even if the webhook returns something different
                 const isArray = Array.isArray(parsed);
 
+                // Extract message and data more intelligently
+                let message = "";
+                let data = null;
+
+                if (isArray && parsed.length > 0) {
+                    const firstItem = parsed[0];
+                    if (firstItem.response || firstItem.message) {
+                        message = firstItem.response || firstItem.message;
+                        data = null; // It's a text response, not property data
+                    } else if (firstItem.property_type || firstItem.price) {
+                        message = "I found several properties that match your search:";
+                        data = parsed;
+                    } else {
+                        message = typeof firstItem === 'string' ? firstItem : JSON.stringify(parsed);
+                        data = null;
+                    }
+                } else if (!isArray && parsed) {
+                    message = parsed.message || parsed.response || (typeof parsed === 'string' ? parsed : JSON.stringify(parsed));
+                    data = parsed.data || null;
+                } else {
+                    message = "I couldn't find any results.";
+                    data = null;
+                }
+
                 return {
-                    message: parsed.message || parsed.response || (isArray ? "I found several properties that match your search:" : (typeof parsed === 'string' ? parsed : JSON.stringify(parsed))),
+                    message,
                     updatedState: parsed.updatedState || (isArray ? currentState : currentState),
-                    nextTool: parsed.nextTool || (isArray ? "NONE" : "NONE"),
-                    data: isArray ? parsed : (parsed.data || null)
+                    nextTool: parsed.nextTool || "NONE",
+                    data: data
                 };
             } catch (e) {
                 console.error("Failed to parse webhook JSON response, returning raw text as message", e);
